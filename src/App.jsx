@@ -1,77 +1,77 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import DashboardOverview from './components/DashboardOverview.jsx';
 import DataTable from './components/DataTable.jsx';
 import QuickActions from './components/QuickActions.jsx';
+import axios from 'axios';
+
+const BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 export default function App() {
   const [role, setRole] = useState('admin');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [cards, setCards] = useState([]);
+  const [tableData, setTableData] = useState({ title: '', data: [] });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const tableConfig = useMemo(() => {
-    switch (role) {
-      case 'admin':
-        return {
-          title: 'Recent Users',
-          columns: [
-            { header: 'Name', accessor: 'name' },
-            { header: 'Email', accessor: 'email' },
-            { header: 'Role', accessor: 'role' },
-          ],
-          data: [
-            { name: 'Sarah Connor', email: 'sarah@example.com', role: 'Lawyer' },
-            { name: 'John Doe', email: 'john@example.com', role: 'Client' },
-            { name: 'Jane Smith', email: 'jane@example.com', role: 'Staff' },
-          ],
-        };
-      case 'lawyer':
-        return {
-          title: 'My Cases',
-          columns: [
-            { header: 'Case ID', accessor: 'id' },
-            { header: 'Client', accessor: 'client' },
-            { header: 'Status', accessor: 'status' },
-            { header: 'Next Hearing', accessor: 'hearing' },
-          ],
-          data: [
-            { id: 'EC-2024-0912', client: 'Acme Corp', status: 'Active', hearing: 'Nov 12' },
-            { id: 'EC-2024-1045', client: 'Jane Cooper', status: 'Pending', hearing: 'Nov 28' },
-            { id: 'EC-2024-0870', client: 'Wayne LLC', status: 'Closed', hearing: '-' },
-          ],
-        };
-      case 'client':
-        return {
-          title: 'My Case Status',
-          columns: [
-            { header: 'Case ID', accessor: 'id' },
-            { header: 'Lawyer', accessor: 'lawyer' },
-            { header: 'Status', accessor: 'status' },
-            { header: 'Next Step', accessor: 'next' },
-          ],
-          data: [
-            { id: 'EC-2024-2001', lawyer: 'A. Khan', status: 'In Progress', next: 'Hearing Nov 12' },
-            { id: 'EC-2024-1862', lawyer: 'M. Patel', status: 'Evidence', next: 'Docs review' },
-          ],
-        };
-      case 'staff':
-        return {
-          title: 'Assigned Tasks',
-          columns: [
-            { header: 'Task', accessor: 'task' },
-            { header: 'Case', accessor: 'case' },
-            { header: 'Due', accessor: 'due' },
-            { header: 'Status', accessor: 'status' },
-          ],
-          data: [
-            { task: 'Prepare bundle', case: 'EC-2024-0912', due: 'Nov 10', status: 'In Progress' },
-            { task: 'Notify client', case: 'EC-2024-1045', due: 'Nov 09', status: 'Pending' },
-            { task: 'File index', case: 'EC-2024-0870', due: 'Nov 08', status: 'Done' },
-          ],
-        };
+  const tableColumns = useMemo(() => {
+    switch (tableData.title) {
+      case 'Recent Users':
+        return [
+          { header: 'Name', accessor: 'name' },
+          { header: 'Email', accessor: 'email' },
+          { header: 'Role', accessor: 'role' },
+        ];
+      case 'My Cases':
+        return [
+          { header: 'Case ID', accessor: 'id' },
+          { header: 'Client', accessor: 'client' },
+          { header: 'Status', accessor: 'status' },
+          { header: 'Next Hearing', accessor: 'hearing' },
+        ];
+      case 'My Case Status':
+        return [
+          { header: 'Case ID', accessor: 'id' },
+          { header: 'Lawyer', accessor: 'lawyer' },
+          { header: 'Status', accessor: 'status' },
+          { header: 'Next Step', accessor: 'next' },
+        ];
+      case 'Assigned Tasks':
+        return [
+          { header: 'Task', accessor: 'task' },
+          { header: 'Case', accessor: 'case' },
+          { header: 'Due', accessor: 'due' },
+          { header: 'Status', accessor: 'status' },
+        ];
       default:
-        return { title: 'Overview', columns: [], data: [] };
+        return [];
     }
+  }, [tableData.title]);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        // ensure demo data is present
+        await axios.post(`${BASE_URL}/api/seed`).catch(() => {});
+        const [overviewRes, tableRes] = await Promise.all([
+          axios.get(`${BASE_URL}/api/dashboard/overview`, { params: { role } }),
+          axios.get(`${BASE_URL}/api/dashboard/table`, { params: { role } }),
+        ]);
+        setCards(overviewRes.data || []);
+        setTableData(tableRes.data || { title: '', data: [] });
+      } catch (e) {
+        setError('Failed to load data from backend.');
+        setCards([]);
+        setTableData({ title: 'Unavailable', data: [] });
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
   }, [role]);
 
   return (
@@ -94,11 +94,19 @@ export default function App() {
             </p>
           </div>
 
-          <DashboardOverview role={role} />
+          {error && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          )}
 
-          <QuickActions role={role} />
-
-          <DataTable title={tableConfig.title} columns={tableConfig.columns} data={tableConfig.data} />
+          {loading ? (
+            <div className="flex items-center justify-center py-10 text-sm text-gray-500">Loading data...</div>
+          ) : (
+            <>
+              <DashboardOverview role={role} cards={cards} />
+              <QuickActions role={role} />
+              <DataTable title={tableData.title} columns={tableColumns} data={tableData.data} />
+            </>
+          )}
         </main>
       </div>
     </div>
